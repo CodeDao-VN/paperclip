@@ -45,7 +45,6 @@ describe("P0-H H05 provisioning & worktree security (SEC-P1-1, SEC-P1-2)", () =>
     const cmdDefault = resolveRuntimeProvisionCommand({
       config: { workspaceStrategy: { type: "git_worktree" } },
       workspace: {
-        mode: "isolated_workspace",
         strategy: "git_worktree",
         cwd: dir,
         baseCwd: dir,
@@ -63,7 +62,6 @@ describe("P0-H H05 provisioning & worktree security (SEC-P1-1, SEC-P1-2)", () =>
     const cmdOptIn = resolveRuntimeProvisionCommand({
       config: { workspaceStrategy: { type: "git_worktree", allowRepoProvisionScript: true } },
       workspace: {
-        mode: "isolated_workspace",
         strategy: "git_worktree",
         cwd: dir,
         baseCwd: dir,
