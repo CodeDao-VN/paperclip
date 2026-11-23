@@ -3309,6 +3309,11 @@ export function agentRoutes(
       let type = assertKnownAdapterType(req.params.type as string);
       await assertCanCreateAgentsForCompany(req, companyId);
 
+      const earlyInputConfig = (req.body?.adapterConfig ?? {}) as Record<string, unknown>;
+      assertNoAgentProcessAdapterMutation(req, type, true);
+      assertNoAgentAdapterConfigMutation(req, earlyInputConfig);
+      assertNoAgentLocalAdapterHostCommandMutation(req, type, earlyInputConfig);
+
       const requestedBinding = req.body.aiConnection ? aiRuntimeConnectionBindingSchema.parse(req.body.aiConnection) : undefined;
       let aiBinding = requestedBinding?.mode === "router" ? undefined : requestedBinding;
       if (aiBinding && req.body.testCredentials && Object.keys(req.body.testCredentials).length) throw unprocessable("A managed connection test cannot override its credentials");
@@ -3405,6 +3410,9 @@ export function agentRoutes(
       if (requestedEnvironment) await assertAdapterTestEnvironmentForCompany(companyId, requestedEnvironment.id, type);
       const adapter = requireServerAdapter(type);
       if (!retainsSavedExecution) await assertSelectableAdapterType(type, adapterConfigForTest, companyId);
+      assertNoAgentProcessAdapterMutation(req, type, true);
+      assertNoAgentAdapterConfigMutation(req, adapterConfigForTest);
+      assertNoAgentLocalAdapterHostCommandMutation(req, type, adapterConfigForTest);
       if (poolBinding?.mode === "router") {
         await validateManagedAgentBinding(req, companyId, savedAgentId ?? "", type, adapterConfigForTest, poolBinding, requestedEnvironmentId, "none", !savedAgentId || testingSetup);
         res.json({ adapterType: type, status: "warn", testedAt: new Date().toISOString(), checks: [{ code: "ai_connection_pool_task_test_required", level: "warn", message: "Pool configuration is available. Run a task to verify the selected account and harness; this preview does not allocate a task or contact a provider." }] });
@@ -3448,6 +3456,14 @@ export function agentRoutes(
         adapterConfigForTest,
         { strictMode: strictSecretsMode, adapterType: type },
       );
+      if (req.actor.type === "agent") {
+        const hasSecretRef = Object.values(asRecord(normalizedAdapterConfig.env) ?? {}).some(
+          (binding) => asRecord(binding)?.type === "secret_ref",
+        );
+        if (hasSecretRef) {
+          throw forbidden("Agent keys cannot resolve secret_ref bindings in adapter environment tests.");
+        }
+      }
       // Prospective, non-persisted config: resolve the acting user's own user
       // secrets in owner_scoped mode (no declaration rows exist for this config).
       // Record an honest audit consumer — environment:<id> when the caller selected
