@@ -2724,6 +2724,19 @@ export function agentRoutes(
     );
   }
 
+  const HOST_COMMAND_LOCAL_ADAPTER_TYPES = new Set([
+    "claude_local",
+    "codex_local",
+    "cursor",
+    "gemini_local",
+    "grok_local",
+    "kimi_local",
+    "opencode_local",
+    "pi_local",
+    "hermes_local",
+    "paperclip_runner",
+  ]);
+
   function assertNoAgentLocalAdapterHostCommandMutation(
     req: Request,
     adapterType: string,
@@ -2731,7 +2744,12 @@ export function agentRoutes(
     allowPlainCredentials = false,
     harnessConfig = adapterConfig,
   ) {
-    if (req.actor.type !== "agent" || (!adapterType.endsWith("_local") && adapterType !== "paperclip_runner")) return;
+    if (
+      req.actor.type !== "agent" ||
+      (!adapterType.endsWith("_local") && !HOST_COMMAND_LOCAL_ADAPTER_TYPES.has(adapterType))
+    ) {
+      return;
+    }
     const harness = agentHarnessType(adapterType, harnessConfig);
     const changedKeys = LOCAL_ADAPTER_HOST_COMMAND_KEYS.filter((key) =>
       adapterConfig[key] !== undefined &&

