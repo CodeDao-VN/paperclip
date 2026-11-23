@@ -6214,7 +6214,7 @@ export function resolveRuntimeProvisionCommand(input: {
   );
   const allowRepoScript =
     input.config.allowRepoProvisionScript === true ||
-    asRecord(input.config.workspaceStrategy)?.allowRepoProvisionScript === true ||
+    parseObject(input.config.workspaceStrategy)?.allowRepoProvisionScript === true ||
     process.env.PAPERCLIP_ALLOW_UNTRUSTED_REPO_PROVISION === "true";
   if (!allowRepoScript) return "";
 

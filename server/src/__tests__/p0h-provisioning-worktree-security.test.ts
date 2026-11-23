@@ -42,12 +42,13 @@ describe("P0-H H05 provisioning & worktree security (SEC-P1-1, SEC-P1-2)", () =>
     await fs.mkdir(path.join(dir, "scripts"), { recursive: true });
     await fs.writeFile(path.join(dir, "scripts", "provision-worktree-runtime.sh"), "#!/usr/bin/env bash\nid\n");
 
-    const cmdDefault = resolveRuntimeProvisionCommand(
-      { workspaceStrategy: { type: "git_worktree" } },
-      {
+    const cmdDefault = resolveRuntimeProvisionCommand({
+      config: { workspaceStrategy: { type: "git_worktree" } },
+      workspace: {
         mode: "isolated_workspace",
         strategy: "git_worktree",
         cwd: dir,
+        baseCwd: dir,
         repoRoot: dir,
         providerType: "git_worktree",
         providerRef: dir,
@@ -56,15 +57,16 @@ describe("P0-H H05 provisioning & worktree security (SEC-P1-1, SEC-P1-2)", () =>
         created: true,
         warnings: [],
       },
-    );
+    });
     expect(cmdDefault).toBe("");
 
-    const cmdOptIn = resolveRuntimeProvisionCommand(
-      { workspaceStrategy: { type: "git_worktree", allowRepoProvisionScript: true } },
-      {
+    const cmdOptIn = resolveRuntimeProvisionCommand({
+      config: { workspaceStrategy: { type: "git_worktree", allowRepoProvisionScript: true } },
+      workspace: {
         mode: "isolated_workspace",
         strategy: "git_worktree",
         cwd: dir,
+        baseCwd: dir,
         repoRoot: dir,
         providerType: "git_worktree",
         providerRef: dir,
@@ -73,7 +75,7 @@ describe("P0-H H05 provisioning & worktree security (SEC-P1-1, SEC-P1-2)", () =>
         created: true,
         warnings: [],
       },
-    );
+    });
     expect(cmdOptIn).toBe("bash ./scripts/provision-worktree-runtime.sh");
   });
 
