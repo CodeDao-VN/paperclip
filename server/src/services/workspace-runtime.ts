@@ -3047,7 +3047,7 @@ function buildWorkspaceCommandEnv(input: {
   agent: ExecutionWorkspaceAgentRef;
   created: boolean;
 }) {
-  const env: NodeJS.ProcessEnv = { ...process.env };
+  const env: NodeJS.ProcessEnv = sanitizeRuntimeServiceBaseEnv(process.env);
   env.PAPERCLIP_WORKSPACE_CWD = input.worktreePath;
   env.PAPERCLIP_WORKSPACE_PATH = input.worktreePath;
   env.PAPERCLIP_WORKSPACE_WORKTREE_PATH = input.worktreePath;
@@ -3082,6 +3082,11 @@ function resolveWorkspaceProvisionCommand(
 ) {
   const configuredCommand = asString(strategy.provisionCommand, "").trim();
   if (configuredCommand) return configuredCommand;
+
+  const allowRepoScript =
+    strategy.allowRepoProvisionScript === true ||
+    process.env.PAPERCLIP_ALLOW_UNTRUSTED_REPO_PROVISION === "true";
+  if (!allowRepoScript) return "";
 
   return existsSync(path.join(repoRoot, "scripts", "provision-worktree.sh"))
     ? BUILTIN_WORKSPACE_PROVISION_COMMAND
@@ -3538,6 +3543,33 @@ export async function realizeExecutionWorkspace(input: {
   const worktreeParentDir = configuredParentDir
     ? resolveConfiguredPath(configuredParentDir, repoRoot)
     : path.join(repoRoot, ".paperclip", "worktrees");
+  const realRepoRoot = existsSync(repoRoot) ? realpathSync(repoRoot) : path.resolve(repoRoot);
+  const resolveDeepestExistingRealpath = (targetPath: string): string => {
+    let cursor = path.resolve(targetPath);
+    const trailing: string[] = [];
+    while (!existsSync(cursor)) {
+      const parent = path.dirname(cursor);
+      if (parent === cursor) break;
+      trailing.unshift(path.basename(cursor));
+      cursor = parent;
+    }
+    const baseReal = existsSync(cursor) ? realpathSync(cursor) : cursor;
+    return path.join(baseReal, ...trailing);
+  };
+  const resolvedParentReal = resolveDeepestExistingRealpath(worktreeParentDir);
+  const relFromRepo = path.relative(realRepoRoot, resolvedParentReal);
+  if (relFromRepo.startsWith("..") || path.isAbsolute(relFromRepo)) {
+    throw new WorkspaceRuntimeValidationFailure(
+      `Configured worktreeParentDir "${worktreeParentDir}" escapes repository root "${realRepoRoot}".`,
+      {
+        workspaceValidation: {
+          reason: "worktree_parent_dir_escapes_root",
+          worktreeParentDir,
+          repoRoot: realRepoRoot,
+        },
+      },
+    );
+  }
   const worktreePath = path.join(worktreeParentDir, branchName);
   if (path.relative(worktreeParentDir, worktreePath).startsWith("..")) {
     throw new WorkspaceRuntimeValidationFailure(
@@ -6180,6 +6212,12 @@ export function resolveRuntimeProvisionCommand(input: {
     "scripts",
     "provision-worktree-runtime.sh",
   );
+  const allowRepoScript =
+    input.config.allowRepoProvisionScript === true ||
+    parseObject(input.config.workspaceStrategy)?.allowRepoProvisionScript === true ||
+    process.env.PAPERCLIP_ALLOW_UNTRUSTED_REPO_PROVISION === "true";
+  if (!allowRepoScript) return "";
+
   const needsSeed = !existsSync(manifestPath) || !hasVerifiedWorktreeSeedManifest(manifestPath);
   if (!needsSeed || !existsSync(provisionScript)) {
     return "";
