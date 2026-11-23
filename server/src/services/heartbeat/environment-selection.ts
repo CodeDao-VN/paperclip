@@ -460,10 +460,11 @@ export async function selectHeartbeatEnvironment(db: Db, input: HeartbeatEnviron
         });
       }
       const shouldSerialize =
-        sharedWorkspaceConcurrency !== "allow" &&
-        (executionForcedToKubernetes ||
-          (environmentDriver !== "local" &&
-            environmentDriver !== "ssh"));
+        sharedWorkspaceConcurrency === "serialize" ||
+        (sharedWorkspaceConcurrency !== "allow" &&
+          (executionForcedToKubernetes ||
+            (environmentDriver !== "local" &&
+              environmentDriver !== "ssh")));
       if (shouldSerialize) {
         throw new WorkspaceBusyDeferral({
           holder: workspaceHolder,

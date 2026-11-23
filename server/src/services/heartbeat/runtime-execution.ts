@@ -1,3 +1,8 @@
+import {
+  assertSandboxDispatchAllowed,
+  executeInEnforcedSandbox,
+  isRuntimeSandboxEnforced,
+} from "./sandbox-enforcement.js";
 import { readClaimedNativeStopRecovery } from "../native-runtime/native-cancellation-request.js";
 import { readContextCompactionRequest } from "../context-compaction.js";
 import { remoteWorkspaceFailureCause } from "../remote-workspace-transport.js";
@@ -655,6 +660,18 @@ export async function executeHeartbeatRuntime(db: Db, input: HeartbeatRuntimeExe
       identityRedactor.addSecretValues(await outputSecretStore.valuesForRun(run.companyId, run.id));
       const stopCleanup = runOptions.nativeRestartRecovery?.kind === "reattach_remote_runner"
         && await readClaimedNativeStopRecovery(db, run, runOptions.nativeLeaseOwner);
+      await assertSandboxDispatchAllowed({
+        adapterType: agent.adapterType,
+        runtimeConfig,
+        workspaceCwd:
+          typeof (context.paperclipWorkspace as Record<string, unknown> | undefined)?.cwd === "string"
+            ? ((context.paperclipWorkspace as Record<string, unknown>).cwd as string)
+            : null,
+        executionTargetDriver:
+          executionTarget?.kind === "remote"
+            ? executionTarget.transport
+            : executionTarget?.kind ?? null,
+      });
       const guardedDispatch =
         await dispatchWithTiming(
           (markDispatchStarted) => {
@@ -890,11 +907,43 @@ export async function executeHeartbeatRuntime(db: Db, input: HeartbeatRuntimeExe
       if (managedMcpConfig) {
         adapterContext.paperclipManagedMcp = managedMcpConfig;
       }
+      const enforcedWorkspaceCwd =
+        typeof (context.paperclipWorkspace as Record<string, unknown> | undefined)?.cwd === "string"
+          ? ((context.paperclipWorkspace as Record<string, unknown>).cwd as string)
+          : null;
+      await assertSandboxDispatchAllowed({
+        adapterType: agent.adapterType,
+        runtimeConfig,
+        workspaceCwd: enforcedWorkspaceCwd,
+        executionTargetDriver:
+          executionTarget?.kind === "remote"
+            ? executionTarget.transport
+            : executionTarget?.kind ?? null,
+      });
       const guardedDispatch =
         await dispatchWithTiming(
           (markDispatchStarted) => {
             input.effects.onLegacyAdapterEntered();
-            return withAdapterExecutionPhase(executionPhaseContext, "adapter_execution", () => adapter.execute({
+            return withAdapterExecutionPhase(executionPhaseContext, "adapter_execution", () => {
+              if (isRuntimeSandboxEnforced() && executionTarget?.kind !== "remote") {
+                markDispatchStarted();
+                const cmdSpec = adapter.getRuntimeCommandSpec?.(runtimeConfig) as
+                  | { command: string; args?: string[]; env?: Record<string, string> }
+                  | null
+                  | undefined;
+                return executeInEnforcedSandbox({
+                  runId: run.id,
+                  adapterType: agent.adapterType,
+                  runtimeConfig,
+                  workspaceCwd: enforcedWorkspaceCwd ?? "",
+                  commandSpec: cmdSpec
+                    ? { command: cmdSpec.command, args: cmdSpec.args, env: cmdSpec.env }
+                    : null,
+                  signal: executionControl.controller.signal,
+                  onLog,
+                });
+              }
+              return adapter.execute({
               getFreshSessionHandoff,
               agentIdentity,
               observability,
@@ -975,7 +1024,8 @@ export async function executeHeartbeatRuntime(db: Db, input: HeartbeatRuntimeExe
                 });
               },
               authToken: authToken ?? undefined,
-            }));
+            });
+            });
           },
         );
       if (!guardedDispatch.dispatched) return { dispatched: false };
