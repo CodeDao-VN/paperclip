@@ -6,6 +6,7 @@ import type {
 import { asString, parseObject } from "@paperclipai/adapter-utils/server-utils";
 import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
+import { assertSafeGatewayWebSocketUrl } from "./ssrf-guard.js";
 
 function summarizeStatus(checks: AdapterEnvironmentCheck[]): AdapterEnvironmentTestResult["status"] {
   if (checks.some((check) => check.level === "error")) return "fail";
@@ -98,6 +99,11 @@ async function probeGateway(input: {
   scopes: string[];
   timeoutMs: number;
 }): Promise<"ok" | "challenge_only" | "failed"> {
+  try {
+    await assertSafeGatewayWebSocketUrl(input.url);
+  } catch {
+    return "failed";
+  }
   return await new Promise((resolve) => {
     const ws = new WebSocket(input.url, { headers: input.headers, maxPayload: 2 * 1024 * 1024 });
     const timeout = setTimeout(() => {

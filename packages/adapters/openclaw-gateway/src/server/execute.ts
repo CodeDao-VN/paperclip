@@ -3,6 +3,7 @@ import type {
   AdapterExecutionResult,
   AdapterRuntimeServiceReport,
 } from "@paperclipai/adapter-utils";
+import { assertSafeGatewayWebSocketUrl } from "./ssrf-guard.js";
 import {
   asNumber,
   asString,
@@ -664,6 +665,7 @@ class GatewayWsClient {
     buildConnectParams: (nonce: string) => Record<string, unknown>,
     timeoutMs: number,
   ): Promise<Record<string, unknown> | null> {
+    await assertSafeGatewayWebSocketUrl(this.opts.url);
     this.ws = new WebSocket(this.opts.url, {
       headers: this.opts.headers,
       maxPayload: 25 * 1024 * 1024,

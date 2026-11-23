@@ -711,6 +711,15 @@ async function readLocalGitWorkspaceSnapshot(localDir: string): Promise<LocalGit
   }
 }
 
+function assertSafeSshTarget(spec: { host: string; username: string }) {
+  if (!spec.host || spec.host.startsWith("-") || /[\s\r\n\0]/.test(spec.host)) {
+    throw new Error(`Unsafe SSH host rejected: "${spec.host}"`);
+  }
+  if (!spec.username || spec.username.startsWith("-") || /[\s\r\n\0]/.test(spec.username)) {
+    throw new Error(`Unsafe SSH username rejected: "${spec.username}"`);
+  }
+}
+
 async function streamLocalFileToSsh(input: {
   spec: SshConnectionConfig;
   localFile: string;
@@ -718,11 +727,13 @@ async function streamLocalFileToSsh(input: {
   progress?: TransferProgress;
   timeoutMs?: number;
 }): Promise<void> {
+  assertSafeSshTarget(input.spec);
   const auth = await createSshAuthArgs(input.spec);
   const sshArgs = [
     ...auth.args,
     "-p",
     String(input.spec.port),
+    "--",
     `${input.spec.username}@${input.spec.host}`,
     `sh -c ${shellQuote(input.remoteScript)}`,
   ];
@@ -1406,9 +1417,11 @@ export async function runSshCommand(
         : `exec sh -c ${shellQuote(remoteCommand)}`,
     ].join(" && ");
 
+    assertSafeSshTarget(config);
     sshArgs.push(
       "-p",
       String(config.port),
+      "--",
       `${config.username}@${config.host}`,
       `sh -c ${shellQuote(SSH_STDIN_COMMAND)}`,
     );
@@ -1467,9 +1480,11 @@ export async function buildSshSpawnTarget(input: {
       : `exec ${remoteCommandParts}`,
   ].join(" && ");
 
+  assertSafeSshTarget(input.spec);
   sshArgs.push(
     "-p",
     String(input.spec.port),
+    "--",
     `${input.spec.username}@${input.spec.host}`,
     `sh -c ${shellQuote(SSH_STDIN_COMMAND)}`,
   );
@@ -1491,13 +1506,15 @@ export async function syncDirectoryToSsh(input: {
   onProgress?: RuntimeProgressSink;
   progressLabel?: string;
 }): Promise<void> {
+  assertSafeSshTarget(input.spec);
   const auth = await createSshAuthArgs(input.spec);
   const sshArgs = [
     ...auth.args,
     "-p",
     String(input.spec.port),
+    "--",
     `${input.spec.username}@${input.spec.host}`,
-    `sh -c ${shellQuote(`mkdir -p ${shellQuote(input.remoteDir)} && tar -xf - -C ${shellQuote(input.remoteDir)}`)}`,
+    `sh -c ${shellQuote(`mkdir -p ${shellQuote(input.remoteDir)} && tar -xf - --no-same-owner -C ${shellQuote(input.remoteDir)}`)}`,
   ];
 
   // tar's archive size isn't known until tar finishes, so estimate it from the
