@@ -5,9 +5,12 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  assertAllowedSandboxWorktreeRoot,
   assertSandboxDispatchAllowed,
   buildDockerSandboxRunArgs,
+  executeInEnforcedSandbox,
   probeDockerSandboxAvailable,
+  resolvePinnedSandboxImage,
   runCommandInDockerSandbox,
   SandboxEnforcementError,
 } from "../services/heartbeat/sandbox-enforcement.js";
@@ -156,5 +159,77 @@ describe("P0-H H06 Runtime Sandbox Enforcement (10 cases)", () => {
     await cancelPromise;
     const { stdout: psOut } = await execFileAsync("docker", ["ps", "-a", "--filter", `name=${cancelName}`, "--format", "{{.Names}}"]);
     expect(psOut.trim()).toBe("");
+  }, 30_000);
+
+  it("enforces pinned image digest, allowed worktree roots, docker inspect security options, and actual coding execution without host fallback", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-h06-enforced-"));
+    tempDirs.push(root);
+    const allowedRoot = path.join(root, "allowed");
+    const wt = path.join(allowedRoot, "wt-task-1");
+    const outsideWt = path.join(root, "outside-wt");
+    await fs.mkdir(wt, { recursive: true });
+    await fs.mkdir(outsideWt, { recursive: true });
+
+    // Unpinned image rejected when digest required
+    expect(() =>
+      resolvePinnedSandboxImage({ PAPERCLIP_SANDBOX_IMAGE: "alpine:latest", PAPERCLIP_SANDBOX_REQUIRE_DIGEST: "true" }),
+    ).toThrow(/pinned by @sha256/);
+
+    // Worktree outside PAPERCLIP_SANDBOX_ALLOWED_ROOTS rejected
+    expect(() =>
+      assertAllowedSandboxWorktreeRoot(outsideWt, { PAPERCLIP_SANDBOX_ALLOWED_ROOTS: allowedRoot }),
+    ).toThrow(/outside PAPERCLIP_SANDBOX_ALLOWED_ROOTS/);
+
+    // Real container with docker inspect verification of security options
+    const inspectRes = await runCommandInDockerSandbox({
+      worktreePath: wt,
+      containerName: `tendra-inspect-${Date.now()}`,
+      command: "sh",
+      args: ["-c", "sleep 0.8 && echo CODE_OK > /workspace/result.txt && id -u"],
+      inspectSecurity: true,
+    });
+    expect(inspectRes.exitCode).toBe(0);
+    expect(inspectRes.inspectedSecurity).toBeDefined();
+    expect(inspectRes.inspectedSecurity?.readonlyRootfs).toBe(true);
+    expect(inspectRes.inspectedSecurity?.networkMode).toBe("none");
+    expect(inspectRes.inspectedSecurity?.capDrop).toContain("ALL");
+    expect(inspectRes.inspectedSecurity?.securityOpt).toContain("no-new-privileges");
+
+    // executeInEnforcedSandbox rejects missing commandSpec (no host fallback) and runs real coding task inside container
+    const prevEnforce = process.env.PAPERCLIP_ENFORCE_SANDBOX;
+    process.env.PAPERCLIP_ENFORCE_SANDBOX = "true";
+    try {
+      await expect(
+        executeInEnforcedSandbox({
+          runId: "run-no-spec",
+          adapterType: "claude_local",
+          runtimeConfig: {},
+          workspaceCwd: wt,
+          commandSpec: null,
+        }),
+      ).rejects.toThrow(/host execution fallback is forbidden/);
+
+      const logs: string[] = [];
+      const execRes = await executeInEnforcedSandbox({
+        runId: "run-coding-1",
+        adapterType: "claude_local",
+        runtimeConfig: {},
+        workspaceCwd: wt,
+        commandSpec: {
+          command: "sh",
+          args: ["-c", "echo 'export const ok = true;' > /workspace/index.ts && hostname && id -u"],
+        },
+        onLog: (_stream, chunk) => {
+          logs.push(chunk);
+        },
+      });
+      expect(execRes.exitCode).toBe(0);
+      expect(execRes.containerName).toMatch(/^tendra-sbx-run-coding-1-/);
+      const written = await fs.readFile(path.join(wt, "index.ts"), "utf8");
+      expect(written).toContain("export const ok = true;");
+    } finally {
+      if (prevEnforce === undefined) delete process.env.PAPERCLIP_ENFORCE_SANDBOX;
+      else process.env.PAPERCLIP_ENFORCE_SANDBOX = prevEnforce;
+    }
   }, 30_000);
 });
