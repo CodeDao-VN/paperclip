@@ -413,6 +413,9 @@ export function projectRoutes(db: Db) {
       ],
     );
     await assertNoManagedSandboxWorkspacePath(workspace);
+    if (req.actor.type === "agent" && workspace && typeof workspace.cwd === "string" && workspace.cwd.trim().length > 0) {
+      throw forbidden("Agent callers cannot register local host workspace paths.");
+    }
     if (projectData.env !== undefined) {
       projectData.env = await secretsSvc.normalizeEnvBindingsForPersistence(
         companyId,
