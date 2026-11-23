@@ -1,3 +1,4 @@
+import { assertSandboxDispatchAllowed } from "./sandbox-enforcement.js";
 import { readClaimedNativeStopRecovery } from "../native-runtime/native-cancellation-request.js";
 import { readContextCompactionRequest } from "../context-compaction.js";
 import { remoteWorkspaceFailureCause } from "../remote-workspace-transport.js";
@@ -655,6 +656,15 @@ export async function executeHeartbeatRuntime(db: Db, input: HeartbeatRuntimeExe
       identityRedactor.addSecretValues(await outputSecretStore.valuesForRun(run.companyId, run.id));
       const stopCleanup = runOptions.nativeRestartRecovery?.kind === "reattach_remote_runner"
         && await readClaimedNativeStopRecovery(db, run, runOptions.nativeLeaseOwner);
+      await assertSandboxDispatchAllowed({
+        adapterType: agent.adapterType,
+        runtimeConfig,
+        workspaceCwd:
+          typeof (context.paperclipWorkspace as Record<string, unknown> | undefined)?.cwd === "string"
+            ? ((context.paperclipWorkspace as Record<string, unknown>).cwd as string)
+            : null,
+        executionTargetDriver: executionTarget?.driver ?? null,
+      });
       const guardedDispatch =
         await dispatchWithTiming(
           (markDispatchStarted) => {
@@ -890,6 +900,15 @@ export async function executeHeartbeatRuntime(db: Db, input: HeartbeatRuntimeExe
       if (managedMcpConfig) {
         adapterContext.paperclipManagedMcp = managedMcpConfig;
       }
+      await assertSandboxDispatchAllowed({
+        adapterType: agent.adapterType,
+        runtimeConfig,
+        workspaceCwd:
+          typeof (context.paperclipWorkspace as Record<string, unknown> | undefined)?.cwd === "string"
+            ? ((context.paperclipWorkspace as Record<string, unknown>).cwd as string)
+            : null,
+        executionTargetDriver: executionTarget?.driver ?? null,
+      });
       const guardedDispatch =
         await dispatchWithTiming(
           (markDispatchStarted) => {
