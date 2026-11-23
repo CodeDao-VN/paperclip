@@ -667,7 +667,10 @@ export async function executeHeartbeatRuntime(db: Db, input: HeartbeatRuntimeExe
           typeof (context.paperclipWorkspace as Record<string, unknown> | undefined)?.cwd === "string"
             ? ((context.paperclipWorkspace as Record<string, unknown>).cwd as string)
             : null,
-        executionTargetDriver: executionTarget?.driver ?? null,
+        executionTargetDriver:
+          executionTarget?.kind === "remote"
+            ? executionTarget.transport
+            : executionTarget?.kind ?? null,
       });
       const guardedDispatch =
         await dispatchWithTiming(
@@ -912,7 +915,10 @@ export async function executeHeartbeatRuntime(db: Db, input: HeartbeatRuntimeExe
         adapterType: agent.adapterType,
         runtimeConfig,
         workspaceCwd: enforcedWorkspaceCwd,
-        executionTargetDriver: executionTarget?.driver ?? null,
+        executionTargetDriver:
+          executionTarget?.kind === "remote"
+            ? executionTarget.transport
+            : executionTarget?.kind ?? null,
       });
       const guardedDispatch =
         await dispatchWithTiming(
@@ -921,7 +927,10 @@ export async function executeHeartbeatRuntime(db: Db, input: HeartbeatRuntimeExe
             return withAdapterExecutionPhase(executionPhaseContext, "adapter_execution", () => {
               if (isRuntimeSandboxEnforced() && executionTarget?.kind !== "remote") {
                 markDispatchStarted();
-                const cmdSpec = adapter.getRuntimeCommandSpec?.(runtimeConfig) ?? null;
+                const cmdSpec = adapter.getRuntimeCommandSpec?.(runtimeConfig) as
+                  | { command: string; args?: string[]; env?: Record<string, string> }
+                  | null
+                  | undefined;
                 return executeInEnforcedSandbox({
                   runId: run.id,
                   adapterType: agent.adapterType,
