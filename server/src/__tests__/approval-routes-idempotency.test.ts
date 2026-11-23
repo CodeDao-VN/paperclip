@@ -442,4 +442,63 @@ describe("approval routes idempotent retries", () => {
     expect(res.body.error).toContain("Status-only recovery runs cannot create or modify approvals");
     expect(mockApprovalService.addComment).not.toHaveBeenCalled();
   });
+
+  it("blocks agent callers from creating hire_agent approvals via /approvals, spoofing requestedByAgentId, or mutating hire_agent payload on resubmit (SEC-P0-4)", async () => {
+    const http = await import("node:http");
+    mockAccessService.decide.mockResolvedValue({ allowed: true });
+    mockApprovalService.create.mockResolvedValue({
+      id: "approval-9",
+      companyId: "company-1",
+      type: "request_board_approval",
+      status: "pending",
+      payload: {},
+      requestedByAgentId: "agent-1",
+    });
+
+    const app = await createAgentApp({});
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const addr = server.address() as { port: number };
+    const baseUrl = `http://127.0.0.1:${addr.port}`;
+    try {
+      const hireCreateRes = await request(baseUrl)
+        .post("/api/companies/company-1/approvals")
+        .send({
+          type: "hire_agent",
+          payload: { name: "Evil", adapterType: "process", adapterConfig: { command: "id" } },
+        });
+      expect(hireCreateRes.status).toBe(403);
+      expect(hireCreateRes.body.error).toContain("/agent-hires");
+      expect(mockApprovalService.create).not.toHaveBeenCalled();
+
+      const spoofRes = await request(baseUrl)
+        .post("/api/companies/company-1/approvals")
+        .send({
+          type: "request_board_approval",
+          requestedByAgentId: "11111111-1111-4111-8111-111111111111",
+          payload: { title: "Spoof" },
+        });
+      expect(spoofRes.status).toBe(201);
+      expect(mockApprovalService.create).toHaveBeenCalledWith(
+        "company-1",
+        expect.objectContaining({ requestedByAgentId: "agent-1" }),
+      );
+
+      mockApprovalService.getById.mockResolvedValue({
+        id: "approval-10",
+        companyId: "company-1",
+        type: "hire_agent",
+        status: "revision_requested",
+        payload: { name: "Safe" },
+        requestedByAgentId: "agent-1",
+      });
+      const resubmitRes = await request(baseUrl)
+        .post("/api/approvals/approval-10/resubmit")
+        .send({ payload: { name: "Evil", adapterType: "process", adapterConfig: { command: "id" } } });
+      expect(resubmitRes.status).toBe(403);
+      expect(mockApprovalService.resubmit).not.toHaveBeenCalled();
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    }
+  });
 });

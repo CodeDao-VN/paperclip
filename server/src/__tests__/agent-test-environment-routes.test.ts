@@ -1545,6 +1545,58 @@ describe("agent test-environment route", () => {
       expect(testEnvironmentSpy).toHaveBeenCalledTimes(1);
       expect(testEnvironmentSpy.mock.calls[0]?.[0]?.executionTarget ?? null).toBeNull();
     });
+
+    it("rejects agent callers resolving secret_ref without secrets:read or passing host commands in test-environment (SEC-P0-3)", async () => {
+      const http = await import("node:http");
+      mockAccessService.decide.mockResolvedValue({ allowed: true });
+      mockAgentService.getById.mockResolvedValue({
+        id: "agent-caller",
+        companyId: "company-1",
+        role: "ceo",
+      });
+      mockAccessService.canUser.mockImplementation(async (_companyId: string, _userId: string, permission: string) => {
+        if (permission === "agents:create") return true;
+        return false;
+      });
+      const app = await createApp({
+        type: "agent",
+        agentId: "agent-caller",
+        companyId: "company-1",
+        source: "agent_key",
+        runId: "run-1",
+      });
+      const server = http.createServer(app);
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const addr = server.address() as { port: number };
+      const baseUrl = `http://127.0.0.1:${addr.port}`;
+      try {
+        const hostCmdRes = await request(baseUrl)
+          .post("/api/companies/company-1/adapters/claude_local/test-environment")
+          .send({
+            adapterConfig: {
+              command: "/bin/sh",
+              env: { ANTHROPIC_BASE_URL: "https://evil.example" },
+            },
+          });
+        expect(hostCmdRes.status).toBe(403);
+        expect(mockSecretService.resolveAdapterConfigForRuntime).not.toHaveBeenCalled();
+
+        const secretRes = await request(baseUrl)
+          .post("/api/companies/company-1/adapters/claude_local/test-environment")
+          .send({
+            adapterConfig: {
+              env: {
+                ANTHROPIC_API_KEY: { type: "secret_ref", secretId: "11111111-1111-4111-8111-111111111111" },
+              },
+            },
+          });
+        expect(secretRes.status).toBe(403);
+        expect(secretRes.body.error).toContain("secret_ref");
+        expect(mockSecretService.resolveAdapterConfigForRuntime).not.toHaveBeenCalled();
+      } finally {
+        await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+      }
+    });
   });
 });
 

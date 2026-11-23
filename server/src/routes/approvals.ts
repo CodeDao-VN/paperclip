@@ -415,12 +415,18 @@ export function approvalRoutes(
         : approvalInput.payload;
 
     const actor = getActorInfo(req);
+    if (req.actor.type === "agent" && approvalInput.type === "hire_agent") {
+      res.status(403).json({ error: "Agent callers must use /agent-hires to request hiring an agent." });
+      return;
+    }
     const approval = await svc.create(companyId, {
       ...approvalInput,
       payload: normalizedPayload,
       requestedByUserId: actor.actorType === "user" ? actor.actorId : null,
       requestedByAgentId:
-        approvalInput.requestedByAgentId ?? (actor.actorType === "agent" ? actor.actorId : null),
+        actor.actorType === "agent"
+          ? actor.actorId
+          : (approvalInput.requestedByAgentId ?? null),
       status: "pending",
       decisionNote: null,
       decidedByUserId: null,
@@ -671,6 +677,10 @@ export function approvalRoutes(
 
     if (req.actor.type === "agent" && req.actor.agentId !== existing.requestedByAgentId) {
       res.status(403).json({ error: "Only requesting agent can resubmit this approval" });
+      return;
+    }
+    if (req.actor.type === "agent" && existing.type === "hire_agent" && req.body.payload !== undefined) {
+      res.status(403).json({ error: "Agent callers cannot modify hire_agent approval payloads during resubmission." });
       return;
     }
 
