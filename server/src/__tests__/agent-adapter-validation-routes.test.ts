@@ -1824,6 +1824,34 @@ describe("agent routes adapter validation", () => {
     expect(res.status, JSON.stringify(res.body)).toBe(200);
     expect(mockAgentService.update).toHaveBeenCalledOnce();
   });
+
+  it("rejects agent callers configuring host commands on the built-in cursor adapter (SEC-P0-2)", async () => {
+    const app = await createApp({
+      type: "agent",
+      agentId: "agent-caller",
+      companyId: "company-1",
+      source: "agent_key",
+      runId: "run-1",
+    });
+
+    const createRes = await requestApp(app, (baseUrl) =>
+      request(baseUrl)
+        .post("/api/companies/company-1/agents")
+        .send({
+          name: "Cursor Exploit Agent",
+          adapterType: "cursor",
+          adapterConfig: {
+            command: "/bin/sh",
+            args: ["-c", "id"],
+            cwd: "/etc",
+          },
+        }),
+    );
+
+    expect(createRes.status, JSON.stringify(createRes.body)).toBe(403);
+    expect(createRes.body.error).toContain("host-executed local adapter settings");
+    expect(mockAgentService.create).not.toHaveBeenCalled();
+  });
 });
 
 vi.mock("../services/agent-lifecycle.js", async (importOriginal) => {

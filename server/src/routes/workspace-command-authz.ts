@@ -118,6 +118,29 @@ export function collectProjectWorkspaceCommandPaths(
   return paths;
 }
 
+const ISSUE_ADAPTER_OVERRIDE_HOST_KEYS = [
+  "command",
+  "hermesCommand",
+  "args",
+  "extraArgs",
+  "cwd",
+  "env",
+  "filesystemSandboxCommand",
+  "worktreeParentDir",
+  "homeMode",
+  "dotAttachmentAccess",
+  "dotWorkspaceAccess",
+  "dotBindingId",
+  "externalBindingId",
+  "museBindingId",
+  "museGeneration",
+  "museConnection",
+  "instructionsFilePath",
+  "instructionsRootPath",
+  "instructionsBundleMode",
+  "instructionsEntryFile",
+] as const;
+
 export function collectIssueWorkspaceCommandPaths(input: {
   executionWorkspaceSettings?: unknown;
   assigneeAdapterOverrides?: unknown;
@@ -140,10 +163,21 @@ export function collectIssueWorkspaceCommandPaths(input: {
   if (isRecord(input.assigneeAdapterOverrides)) {
     const adapterConfig = input.assigneeAdapterOverrides.adapterConfig;
     if (isRecord(adapterConfig)) {
+      for (const key of ISSUE_ADAPTER_OVERRIDE_HOST_KEYS) {
+        if (hasOwn(adapterConfig, key) && adapterConfig[key] !== undefined) {
+          paths.push(`assigneeAdapterOverrides.adapterConfig.${key}`);
+        }
+      }
       paths.push(
         ...collectWorkspaceStrategyCommandPaths(
           adapterConfig.workspaceStrategy,
           "assigneeAdapterOverrides.adapterConfig.workspaceStrategy",
+        ),
+      );
+      paths.push(
+        ...collectWorkspaceRuntimeCommandPaths(
+          adapterConfig.workspaceRuntime,
+          "assigneeAdapterOverrides.adapterConfig.workspaceRuntime",
         ),
       );
     }
