@@ -3,6 +3,7 @@ import type {
   AdapterExecutionResult,
   AdapterRuntimeServiceReport,
 } from "@paperclipai/adapter-utils";
+import { resolveAndPinGatewayWebSocket } from "./ssrf-guard.js";
 import {
   asNumber,
   asString,
@@ -664,8 +665,11 @@ class GatewayWsClient {
     buildConnectParams: (nonce: string) => Record<string, unknown>,
     timeoutMs: number,
   ): Promise<Record<string, unknown> | null> {
+    const pinned = await resolveAndPinGatewayWebSocket(this.opts.url);
     this.ws = new WebSocket(this.opts.url, {
       headers: this.opts.headers,
+      agent: pinned.agent,
+      followRedirects: false,
       maxPayload: 25 * 1024 * 1024,
     });
 

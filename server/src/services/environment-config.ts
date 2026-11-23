@@ -45,9 +45,17 @@ const sshEnvironmentConfigSchema = z.object({
   network: z.enum(["direct", "tailscale"]).optional(),
   tailscaleAuthKey: z.null().optional(),
   tailscaleAuthKeySecretRef: secretRefSchema.extend({ version: z.literal("latest").optional().default("latest") }).optional().nullable(),
-  host: z.string({ error: "SSH environments require a host." }).trim().min(1, "SSH environments require a host."),
+  host: z
+    .string({ error: "SSH environments require a host." })
+    .trim()
+    .min(1, "SSH environments require a host.")
+    .refine((value) => !value.startsWith("-") && !/[\s\r\n\0]/.test(value), "SSH host cannot start with '-' or contain whitespace."),
   port: z.coerce.number().int().min(1).max(65535).default(22),
-  username: z.string({ error: "SSH environments require a username." }).trim().min(1, "SSH environments require a username."),
+  username: z
+    .string({ error: "SSH environments require a username." })
+    .trim()
+    .min(1, "SSH environments require a username.")
+    .refine((value) => !value.startsWith("-") && !/[\s\r\n\0]/.test(value), "SSH username cannot start with '-' or contain whitespace."),
   remoteWorkspacePath: z
     .string({ error: "SSH environments require a remote workspace path." })
     .trim()
